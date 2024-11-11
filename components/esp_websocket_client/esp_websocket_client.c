@@ -232,13 +232,15 @@ static esp_err_t esp_websocket_client_abort_connection(esp_websocket_client_hand
     ESP_WS_CLIENT_STATE_CHECK(TAG, client, return ESP_FAIL);
     esp_transport_close(client->transport);
 
-    if (client->config->auto_reconnect) {
+    if (!client->config->auto_reconnect) {
+        client->run = false;
+        client->state = WEBSOCKET_STATE_UNKNOW;
+    } else {
         client->reconnect_tick_ms = _tick_get_ms();
         ESP_LOGI(TAG, "Reconnect after %d ms", client->wait_timeout_ms);
+        client->error_handle.error_type = error_type;
+        client->state = WEBSOCKET_STATE_WAIT_TIMEOUT;
     }
-
-    client->error_handle.error_type = error_type;
-    client->state = WEBSOCKET_STATE_WAIT_TIMEOUT;
     esp_websocket_client_dispatch_event(client, WEBSOCKET_EVENT_DISCONNECTED, NULL, 0);
     return ESP_OK;
 }
@@ -437,7 +439,7 @@ static void destroy_and_free_resources(esp_websocket_client_handle_t client)
     if (client->transport_list) {
         esp_transport_list_destroy(client->transport_list);
     }
-    vQueueDelete(client->lock);
+    vSemaphoreDelete(client->lock);
     free(client->tx_buffer);
     free(client->rx_buffer);
     free(client->errormsg_buffer);
@@ -982,6 +984,7 @@ static void esp_websocket_client_task(void *pv)
 
     client->state = WEBSOCKET_STATE_INIT;
     xEventGroupClearBits(client->status_bits, STOPPED_BIT | CLOSE_FRAME_SENT_BIT);
+    esp_websocket_client_dispatch_event(client, WEBSOCKET_EVENT_BEGIN, NULL, 0);
     int read_select = 0;
     while (client->run) {
         if (xSemaphoreTakeRecursive(client->lock, lock_timeout) != pdPASS) {
@@ -1060,10 +1063,6 @@ static void esp_websocket_client_task(void *pv)
             break;
         case WEBSOCKET_STATE_WAIT_TIMEOUT:
 
-            if (!client->config->auto_reconnect) {
-                client->run = false;
-                break;
-            }
             if (_tick_get_ms() - client->reconnect_tick_ms > client->wait_timeout_ms) {
                 client->state = WEBSOCKET_STATE_INIT;
                 client->reconnect_tick_ms = _tick_get_ms();
@@ -1094,7 +1093,9 @@ static void esp_websocket_client_task(void *pv)
                 } else {
                     esp_websocket_client_error(client, "esp_transport_poll_read() returned %d, errno=%d", read_select, errno);
                 }
+                xSemaphoreTakeRecursive(client->lock, lock_timeout);
                 esp_websocket_client_abort_connection(client, WEBSOCKET_ERROR_TYPE_TCP_TRANSPORT);
+                xSemaphoreGiveRecursive(client->lock);
             }
         } else if (WEBSOCKET_STATE_WAIT_TIMEOUT == client->state) {
             // waiting for reconnecting...
@@ -1116,6 +1117,7 @@ static void esp_websocket_client_task(void *pv)
         }
     }
 
+    esp_websocket_client_dispatch_event(client, WEBSOCKET_EVENT_FINISH, NULL, 0);
     esp_transport_close(client->transport);
     xEventGroupSetBits(client->status_bits, STOPPED_BIT);
     client->state = WEBSOCKET_STATE_UNKNOW;

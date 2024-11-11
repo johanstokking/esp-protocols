@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -66,6 +66,18 @@ public:
     int write(DTE_Command command);
 
     /**
+     * @brief send data to the selected terminal, by default (without term_id argument)
+     * this API works the same as write: sends data to the secondary terminal, which is
+     * typically used as data terminal (for networking).
+     *
+     * @param data Data pointer to write
+     * @param len Data len to write
+     * @param term_id Terminal id: Primary if id==0, Secondary if id==1
+     * @return number of bytes written
+     */
+    int send(uint8_t *data, size_t len, int term_id = 1);
+
+    /**
      * @brief Reading from the underlying terminal
      * @param d Returning the data pointer of the received payload
      * @param len Length of the data payload
@@ -93,6 +105,17 @@ public:
      * @param f Function to be called on DTE error
      */
     void set_error_cb(std::function<void(terminal_error err)> f);
+
+#ifdef CONFIG_ESP_MODEM_URC_HANDLER
+    /**
+     * @brief Allow setting a line callback for all incoming data
+     * @param line_cb
+     */
+    void set_urc_cb(got_line_cb line_cb)
+    {
+        command_cb.urc_handler = std::move(line_cb);
+    }
+#endif
 
     /**
      * @brief Sets the DTE to desired mode (Command/Data/Cmux)
@@ -191,6 +214,9 @@ private:
      * @brief This abstracts command callback processing and implements its locking, signaling of completion and timeouts.
      */
     struct command_cb {
+#ifdef CONFIG_ESP_MODEM_URC_HANDLER
+        got_line_cb urc_handler {};                             /*!< URC callback if enabled */
+#endif
         static const size_t GOT_LINE = SignalGroup::bit0;       /*!< Bit indicating response available */
         got_line_cb got_line;                                   /*!< Supplied command callback */
         Lock line_lock{};                                       /*!< Command callback locking mechanism */

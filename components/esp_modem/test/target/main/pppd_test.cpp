@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -18,7 +18,8 @@
 #include "freertos/event_groups.h"
 
 #define CATCH_CONFIG_MAIN
-#include "catch.hpp"
+#include "catch2/catch_test_macros.hpp"
+#include "catch2/catch_session.hpp"
 
 static const char *TAG = "pppd_test";
 static EventGroupHandle_t event_group = NULL;
@@ -93,6 +94,10 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(modem_init_network(ppp_netif));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, on_modem_event, nullptr));
     ESP_ERROR_CHECK(esp_event_handler_register(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, &on_ppp_changed, nullptr));
+
+#if CONFIG_TEST_APP_AUTH
+    esp_netif_ppp_set_auth(ppp_netif, NETIF_PPP_AUTHTYPE_CHAP, CONFIG_TEST_APP_AUTH_USERNAME, CONFIG_TEST_APP_AUTH_PASSWORD);
+#endif
 
     modem_start_network();
     Catch::Session session;

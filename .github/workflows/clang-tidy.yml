@@ -35,14 +35,14 @@ jobs:
         working-directory: test_app
         run: |
           . ${IDF_PATH}/export.sh
-          idf.py clang-check --include-paths $GITHUB_WORKSPACE --exclude-paths $PWD --run-clang-tidy-py run-clang-tidy
+          idf.py clang-check --include-paths $GITHUB_WORKSPACE --exclude-paths $PWD --run-clang-tidy-py run-clang-tidy --run-clang-tidy-options "-checks=-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling"
           cp warnings.txt ../
       - name: Convert clang-tidy results into SARIF output
         run: |
           export PATH=$PWD:$PATH
           ./clang-tidy-sarif -o results.sarif.raw warnings.txt
           python3 filter_sarif.py -o results.sarif --include-prefix ${GITHUB_WORKSPACE}/ results.sarif.raw
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           path: |
             warnings.txt

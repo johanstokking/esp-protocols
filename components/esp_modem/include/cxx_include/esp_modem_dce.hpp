@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -30,9 +30,11 @@ public:
     ~DCE_Mode() = default;
     bool set(DTE *dte, ModuleIf *module, Netif &netif, modem_mode m);
     modem_mode get();
+    modem_mode guess(DTE *dte, bool with_cmux = false);
 
 private:
     bool set_unsafe(DTE *dte, ModuleIf *module, Netif &netif, modem_mode m);
+    modem_mode guess_unsafe(DTE *dte, bool with_cmux);
     modem_mode mode;
 
 };
@@ -79,6 +81,11 @@ public:
         return dte->command(command, std::move(got_line), time_ms);
     }
 
+    modem_mode guess_mode(bool with_cmux = false)
+    {
+        return mode.guess(dte.get(), with_cmux);
+    }
+
     bool set_mode(modem_mode m)
     {
         return mode.set(dte.get(), device.get(), netif, m);
@@ -88,6 +95,13 @@ public:
     {
         return dte->recover();
     }
+
+#ifdef CONFIG_ESP_MODEM_URC_HANDLER
+    void set_urc(got_line_cb on_read_cb)
+    {
+        dte->set_urc_cb(on_read_cb);
+    }
+#endif
 
 protected:
     std::shared_ptr<DTE> dte;

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -50,9 +50,11 @@ void DTE::set_command_callbacks()
 {
     primary_term->set_read_cb([this](uint8_t *data, size_t len) {
         Scoped<Lock> l(command_cb.line_lock);
-        if (command_cb.got_line == nullptr) {
-            return false;
+#ifndef CONFIG_ESP_MODEM_URC_HANDLER
+        if (command_cb.got_line == nullptr || command_cb.result != command_result::TIMEOUT) {
+            return false;   // this line has been processed already (got OK or FAIL previously)
         }
+#endif
         if (data) {
             // For terminals which post data directly with the callback (CMUX)
             // we cannot defragment unless we allocate, but
@@ -154,12 +156,10 @@ bool DTE::exit_cmux()
     if (!cmux_term) {
         return false;
     }
-    if (!cmux_term->deinit()) {
-        return false;
-    }
+    const bool success = cmux_term->deinit();
     exit_cmux_internal();
     cmux_term.reset();
-    return true;
+    return success;
 }
 
 void DTE::exit_cmux_internal()
@@ -223,13 +223,13 @@ bool DTE::set_mode(modem_mode m)
         }
     }
     // transitions (COMMAND|DUAL|CMUX|UNDEF) -> DATA
-    if (m == modem_mode::DATA_MODE) {
+    if (m == modem_mode::DATA_MODE || m == modem_mode::RESUME_DATA_MODE) {
         if (mode == modem_mode::CMUX_MODE || mode == modem_mode::CMUX_MANUAL_MODE || mode == modem_mode::DUAL_MODE) {
             // mode stays the same, but need to swap terminals (as command has been switched)
             secondary_term.swap(primary_term);
             set_command_callbacks();
         } else {
-            mode = m;
+            mode = modem_mode::DATA_MODE;
         }
         return true;
     }
@@ -316,6 +316,12 @@ int DTE::write(uint8_t *data, size_t len)
     return secondary_term->write(data, len);
 }
 
+int DTE::send(uint8_t *data, size_t len, int term_id)
+{
+    Terminal *term = term_id == 0 ? primary_term.get() : secondary_term.get();
+    return term->write(data, len);
+}
+
 int DTE::write(DTE_Command command)
 {
     return primary_term->write(command.data, command.len);
@@ -347,9 +353,14 @@ void DTE::on_read(got_line_cb on_read_cb)
 
 bool DTE::command_cb::process_line(uint8_t *data, size_t consumed, size_t len)
 {
-    if (result != command_result::TIMEOUT) {
+#ifdef CONFIG_ESP_MODEM_URC_HANDLER
+    if (urc_handler) {
+        urc_handler(data, consumed + len);
+    }
+    if (result != command_result::TIMEOUT || got_line == nullptr) {
         return false;   // this line has been processed already (got OK or FAIL previously)
     }
+#endif
     if (memchr(data + consumed, separator, len)) {
         result = got_line(data, consumed + len);
         if (result == command_result::OK || result == command_result::FAIL) {
