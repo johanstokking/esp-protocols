@@ -90,6 +90,10 @@ typedef enum {
     WEBSOCKET_TRANSPORT_OVER_SSL,       /*!< Transport over ssl */
 } esp_websocket_transport_t;
 
+typedef BaseType_t (*esp_websocket_task_func_t)(TaskFunction_t task_code, const char *const name,
+                                                const uint32_t stack_depth, void *const parameters, BaseType_t priority,
+                                                TaskHandle_t *const created_task);
+
 /**
  * @brief Websocket client setup configuration
  */
@@ -105,6 +109,7 @@ typedef struct {
     int                         task_prio;                  /*!< Websocket task priority */
     const char                 *task_name;                  /*!< Websocket task name */
     int                         task_stack;                 /*!< Websocket task stack */
+    esp_websocket_task_func_t   task_func;                  /*!< Websocket task create function */
     int                         buffer_size;                /*!< Websocket buffer size */
     const char                  *cert_pem;                  /*!< Pointer to certificate data in PEM or DER format for server verify (with SSL), default is NULL, not required to verify the server. PEM-format must have a terminating NULL-character. DER-format requires the length to be passed in cert_len. */
     size_t                      cert_len;                   /*!< Length of the buffer pointed to by cert_pem. May be 0 for null-terminated pem */
